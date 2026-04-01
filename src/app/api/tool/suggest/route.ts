@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWithRetry } from "@/lib/api-retry";
+import { trackAndLog } from "@/lib/cost-tracker";
 
 interface SuggestInput {
   crisisType: string;
@@ -69,7 +71,8 @@ ADDITIONAL DETAILS: ${input.details || "None provided"}
 
 Please provide specific, actionable, and sensitive suggestions tailored to this relationship level and crisis type.`;
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const startTime = Date.now();
+    const res = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -85,7 +88,7 @@ Please provide specific, actionable, and sensitive suggestions tailored to this 
           { role: "user", content: userPrompt },
         ],
       }),
-    });
+    }, { maxRetries: 2 });
 
     if (!res.ok) {
       console.error("OpenRouter error:", await res.text());
@@ -93,6 +96,7 @@ Please provide specific, actionable, and sensitive suggestions tailored to this 
     }
 
     const json = await res.json();
+    await trackAndLog("helpful-offers", json, model, undefined, Date.now() - startTime);
     const text = json.choices?.[0]?.message?.content ?? "";
     const cleanText = text
       .replace(/```json\n?/g, "")
